@@ -1,3 +1,8 @@
-export interface ISerializer<T = unknown> {
-   serializeMethodCall(path: string, args: any[]): T;
+export interface ISerializer {
+   serializeMethodCall(path: string, args: any[]): SerializedMessage;
+}
+
+export interface SerializedMessage {
+   serializerName: string;
+   data: unknown;
 }

@@ -2,18 +2,19 @@ import { Transport } from './abstractions/index.js';
 import { RpcThing } from './RpcThing.js';
 import { DefaultSerializer } from './serializers/index.js';
 
-interface Foo {
-   zip(): {
-      bar: (s: string) => Promise<string>;
-   };
-}
-
-const service: Foo = {
+const service = {
+   [Symbol()]: 'a',
    zip() {
       return {
-         bar: (s) => {
-            return Promise.resolve(s);
+         staticString: 'zip().staticString',
+         bar: (s: string) => {
+            return s;
          }
+      };
+   },
+   staticOnlyMethod() {
+      return {
+         static: 0
       };
    }
 };
@@ -27,13 +28,13 @@ const transportClient: Transport = {
 
 const serializer = new DefaultSerializer(transportClient, service);
 
-const thing = new RpcThing<Foo>(serializer);
+const thing = new RpcThing<typeof service>(serializer);
 
-const result = thing.target.zip();
-const resolvedResult = await result;
+const zipResult = await thing.target.zip();
+console.log(zipResult.staticString);
 
-const bar = resolvedResult.bar('hello world');
-const barA = await bar;
+const zipBarResult = await zipResult.bar('zip().bar');
+console.log(zipBarResult);
 
-console.log(barA);
-
+const staticOnlyMethodResult = await thing.target.staticOnlyMethod();
+console.log('staticOnlyMethodResult().static: ' + staticOnlyMethodResult.static);

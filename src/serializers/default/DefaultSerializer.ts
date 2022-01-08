@@ -22,11 +22,19 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
       const remoteResponse = await this._transport.invoke(call) as SerializedResult;
 
       if (remoteResponse.t === ResultType.Object) {
+
+         const obj: any = {};
+         for (const v of (remoteResponse.vs ?? [])) {
+            obj[v.k] = v.v;
+         }
+
+         if (remoteResponse.st) { return obj; }
+
          const thing = new RpcThing<any>({
             remoteInvoke: (childCall) => {
                return this.internalRemoteInvoke(childCall, remoteResponse.callId);
             }
-         });
+         }, obj);
 
          return thing.target;
       }
@@ -42,7 +50,7 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
       const type = typeof result;
 
       if (type === 'string') {
-         return {callId, t: ResultType.Value, v: result };
+         return { callId, t: ResultType.Value, v: result  };
       }
 
       if (Array.isArray(result)) {
@@ -50,8 +58,22 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
       }
 
       if (type === 'object') {
+
+         const staticValues: ObjectResult['vs'] = [];
+         const propNames = Object.getOwnPropertyNames(result);
+         for(const prop of propNames) {
+            const v = (result as any)[prop];
+            const vt = typeof v;
+            if (vt === 'object' || vt === 'symbol' || vt === 'function') { continue; }
+            staticValues.push({ k: prop, v: v });
+         }
          
-         return { callId, t: ResultType.Object };
+         return {
+            callId,
+            t: ResultType.Object,
+            st: staticValues.length === propNames.length,
+            vs: staticValues.length ? staticValues : undefined
+         };
       }
       
       throw new Error(`Unknown result serializer for type ${type}`);
@@ -59,30 +81,38 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
 
    private readonly _childObjects = new Map < string, any > ();
    public async invoke(call: Call): Promise<SerializedResult> {
-      let value: any = call.parentCallId ? this._childObjects.get(call.parentCallId) : this.service;
-      const usedSegments: string[] = [];
-      for (const pathSegment of call.callArgs.path) {
-         value = value[pathSegment];
-         if (!value) {
-            throw new Error(`Property ${pathSegment} does not exist on ${usedSegments.join('.')}`);
+      try {
+         let value: any = call.parentCallId ? this._childObjects.get(call.parentCallId) : this.service;
+         const usedSegments: string[] = [];
+         for (const pathSegment of call.callArgs.path) {
+            value = value[pathSegment];
+            if (!value) {
+               throw new Error(`Property ${pathSegment} does not exist on ${usedSegments.join('.')}`);
+            }
+            usedSegments.push(pathSegment);
          }
-         usedSegments.push(pathSegment);
+
+         if (typeof value !== 'function') {
+            throw new Error(`${usedSegments.join('.')} is not a function`);
+         }
+
+         const result = value(...call.callArgs.args);
+         const resolvedResult = await Promise.resolve(result);
+
+         const serialized = this.serializeResult(call.callId, resolvedResult);
+
+         if (serialized.t === ResultType.Object && !serialized.st) {
+            this._childObjects.set(call.callId, resolvedResult);
+         }
+
+         return serialized;
+      } catch (e: any) {
+         return {
+            callId: call.callId,
+            t: ResultType.Error,
+            m: e.message
+         };
       }
-
-      if (typeof value !== 'function') {
-         throw new Error(`${usedSegments.join('.')} is not a function`);
-      }
-
-      const result = value(...call.callArgs.args);
-      const resolvedResult = await Promise.resolve(result);
-
-      const serialized = this.serializeResult(call.callId, resolvedResult);
-
-      if (serialized.t === ResultType.Object) {
-         this._childObjects.set(serialized.callId, resolvedResult);
-      }
-
-      return serialized;
    }
 
 }
@@ -106,6 +136,12 @@ type SerializedResult = {
 
 interface ObjectResult {
    t: ResultType.Object
+   /** True if the object consists of only static property values */
+   st: boolean;
+   vs?: {
+      k: string,
+      v: ValueResult
+   }[];
 }
 
 interface ArrayResult {

@@ -2,8 +2,8 @@ type ApplyHandler = (path: string, args: any[]) => any;
 
 const pathSymbol = Symbol('Proxy Path');
 
-export function createProxy(path: string, applyHandler: ApplyHandler) {
-   return new Proxy(createProxyTarget(path), {
+export function createProxy(path: string, applyHandler: ApplyHandler, base?: any) {
+   return new Proxy(createProxyTarget(path, base), {
       get: (target, prop) => {
          if (prop === 'then') {
             return null;
@@ -40,9 +40,15 @@ function joinPath(left: string, right: string) {
    return `${left}.${right}`;
 }
 
-function createProxyTarget(path: string): any {
+function createProxyTarget(path: string, base?: any): any {
    // eslint-disable-next-line @typescript-eslint/no-empty-function
    const target: any = () => {};
    target[pathSymbol] = path;
+   if (base) {
+      for (const prop of Object.getOwnPropertyNames(base)) {
+         const v = base[prop];
+         target[prop] = v;
+      }
+   }
    return target;
 }

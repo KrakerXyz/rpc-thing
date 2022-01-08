@@ -5,7 +5,7 @@ export type PromiseWrap<T> = T extends Promise<any> ? T : Promise<T>;
 
 export type ExpandDeep<T> =
    T extends (...args: any[]) => any
-      ? T
+      ? T //Return functions as-is
       : T extends object
          ? T extends infer O
             ? { [K in keyof O]: ExpandDeep<O[K]> }
@@ -13,4 +13,9 @@ export type ExpandDeep<T> =
          : T;
 
 /** Recursively wraps each method's return type with a Promise */
-export type PromisfiedService<T extends Service<T>> = ExpandDeep<{ [K in keyof T]: T[K] extends (...args: infer TArgs) => infer TReturn ? (...args: TArgs) => PromiseWrap<TReturn> : PromisfiedService<T[K]> }>;
+export type PromisfiedService<T extends Service<T>> = ExpandDeep<{
+   [K in keyof T]:
+   T[K] extends (...args: infer TArgs) => infer TReturn
+      ? (...args: TArgs) => PromiseWrap<TReturn>
+      : PromisfiedService<T[K]>
+}>;

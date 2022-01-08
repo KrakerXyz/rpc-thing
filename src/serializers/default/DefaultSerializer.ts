@@ -21,14 +21,23 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
 
       const remoteResponse = await this._transport.invoke(call) as SerializedResult;
 
-      if (remoteResponse.t === ResultType.Object) {
+      const result = this.deserializeRemoteResponse(remoteResponse);
+
+      return result;
+ 
+   }
+
+   private deserializeRemoteResponse(remoteResponse: SerializedResult): any {
+      if (remoteResponse.t === ResultType.Object || remoteResponse.t === ResultType.Function) {
 
          const obj: any = {};
-         for (const v of (remoteResponse.vs ?? [])) {
-            obj[v.k] = v.v;
-         }
+         if (remoteResponse.t === ResultType.Object) {
+            for (const v of (remoteResponse.vs ?? [])) {
+               obj[v.k] = v.v;
+            }
 
-         if (remoteResponse.st) { return obj; }
+            if (remoteResponse.st) { return obj; }
+         }
 
          const thing = new RpcThing<any>({
             remoteInvoke: (childCall) => {
@@ -43,18 +52,38 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
          return remoteResponse.v;
       }
 
-      throw new Error('Not implemented');
+      if (remoteResponse.t === ResultType.Array) {
+         const deserializedElements = remoteResponse.e.map((e, i) => this.deserializeRemoteResponse({ callId: `${remoteResponse.callId}[${i}]`, ...e, }));
+         return deserializedElements;
+      }
+
+      if (remoteResponse.t === ResultType.Error) {
+         throw new Error(remoteResponse.m);
+      }
+
+      throw new Error(`Response type ${Object.values(ResultType)[(remoteResponse as any).t]} not implemented`);
    }
 
    private serializeResult(callId: string, result: unknown): SerializedResult {
       const type = typeof result;
 
-      if (type === 'string') {
+      if (type === 'string' || type === 'number' || type === 'boolean' || type === 'bigint' || type === 'undefined') {
          return { callId, t: ResultType.Value, v: result  };
       }
 
       if (Array.isArray(result)) {
-         throw new Error('Arrays not implemented');
+
+         const values = result.map<SerializedResultType>(v => {
+            const result = this.serializeResult(callId, v);
+            const { callId: callIdTrash, ...other } = result;
+            return other;
+         });
+
+         return {
+            callId,
+            t: ResultType.Array,
+            e: values
+         };
       }
 
       if (type === 'object') {
@@ -75,6 +104,13 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
             vs: staticValues.length ? staticValues : undefined
          };
       }
+
+      if (type === 'function') {
+         return {
+            callId,
+            t: ResultType.Function
+         };
+      }
       
       throw new Error(`Unknown result serializer for type ${type}`);
    }
@@ -85,24 +121,36 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
          let value: any = call.parentCallId ? this._childObjects.get(call.parentCallId) : this.service;
          const usedSegments: string[] = [];
          for (const pathSegment of call.callArgs.path) {
-            value = value[pathSegment];
+            value = pathSegment ? value[pathSegment] : value;
             if (!value) {
                throw new Error(`Property ${pathSegment} does not exist on ${usedSegments.join('.')}`);
             }
             usedSegments.push(pathSegment);
          }
 
-         if (typeof value !== 'function') {
-            throw new Error(`${usedSegments.join('.')} is not a function`);
+         let result = value;
+         if (typeof result === 'function') {
+            result = result(...call.callArgs.args);
+         } else if (call.callArgs.args.length) {
+            throw new Error('Args given but value was not a function');
          }
 
-         const result = value(...call.callArgs.args);
          const resolvedResult = await Promise.resolve(result);
 
          const serialized = this.serializeResult(call.callId, resolvedResult);
 
          if (serialized.t === ResultType.Object && !serialized.st) {
             this._childObjects.set(call.callId, resolvedResult);
+         }
+
+         if (serialized.t === ResultType.Array) {
+            for (let i = 0; i < serialized.e.length; i++) {
+               const e = serialized.e[i];
+               if (e.t !== ResultType.Object && e.t !== ResultType.Function) { continue; }
+               if (e.t === ResultType.Object && e.st) { continue; }
+               const arrCallId = `${call.callId}[${i}]`;
+               this._childObjects.set(arrCallId, resolvedResult[i]);
+            }
          }
 
          return serialized;
@@ -127,12 +175,15 @@ enum ResultType {
    Value,
    Object,
    Array,
+   Function,
    Error
 }
 
+type SerializedResultType = ObjectResult | ArrayResult | ValueResult | ErrorResult | FunctionResult;
+
 type SerializedResult = {
    callId: string;
-} & (ObjectResult | ArrayResult | ValueResult | ErrorResult);
+} & SerializedResultType;
 
 interface ObjectResult {
    t: ResultType.Object
@@ -147,7 +198,7 @@ interface ObjectResult {
 interface ArrayResult {
    t: ResultType.Array,
    /** The types for each element in the array */
-   e: Omit<ResultType, 'callId'>[]
+   e: SerializedResultType[]
 }
 
 interface ValueResult {
@@ -162,12 +213,16 @@ interface ErrorResult {
    m: string;
 }
 
+interface FunctionResult {
+   t: ResultType.Function
+}
+
 const _example = {
-   p1: 'a',
-   p2: 2,
+   p1: 'a', //done
+   p2: 2, //done
    p3: Symbol(), //throw error
-   p4: () => 'a',
-   p5: {
+   p4: () => 'a', //tested
+   p5: { //done
       pp1: 'whatever.. Same as example just recursive',
    },
    p6: ['a', 1, () => 'q'],

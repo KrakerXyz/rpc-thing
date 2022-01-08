@@ -7,7 +7,6 @@
       "esModuleInterop": true, //To stop jest from complaining
       "outDir": "dist",
       "skipLibCheck": true,
-      "noErrorTruncation": true,
       "types": [
          "jest"
       ],

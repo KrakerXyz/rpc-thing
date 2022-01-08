@@ -1,10 +1,8 @@
-import { ITransport } from '../abstractions/ITransport';
+import { Transport } from '../abstractions/Transport';
 
-export class WebSocketClientTransport implements ITransport {
-   public remoteInvoke(data: unknown): Promise<unknown> {
-      console.log(`remoteInvoke: ${JSON.stringify(data)}`);
-      return new Promise<unknown>((r) => {
-         setTimeout(() => r(true), 1000);
-      });
+export class WebSocketClientTransport implements Transport {
+   // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   public invoke(data: unknown): Promise<unknown> {
+      throw new Error('not implemented');
    }
 }

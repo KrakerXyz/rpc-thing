@@ -1,9 +1,13 @@
 type ApplyHandler = (path: string, args: any[]) => any;
 
 const pathSymbol = Symbol('Proxy Path');
+
 export function createProxy(path: string, applyHandler: ApplyHandler) {
    return new Proxy(createProxyTarget(path), {
       get: (target, prop) => {
+         if (prop === 'then') {
+            return null;
+         }
          return getHandler(target, prop, applyHandler);
       },
       apply: (target, _thisArg, args) => {

@@ -1,3 +1,14 @@
 {
-   "cSpell.words": ["prestart"]
+   "cSpell.words": [
+      "prestart",
+      "Promisfied",
+      "serializers"
+   ],
+   "editor.codeActionsOnSave": {
+      "source.fixAll.eslint": true
+   },
+   "eslint.validate": [
+      "javascript",
+      "typescript"
+   ]
 }

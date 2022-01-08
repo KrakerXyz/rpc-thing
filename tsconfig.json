@@ -7,14 +7,20 @@
       "esModuleInterop": true, //To stop jest from complaining
       "outDir": "dist",
       "skipLibCheck": true,
-      "types": ["jest"],
+      "noErrorTruncation": true,
+      "types": [
+         "jest"
+      ],
       "importHelpers": true,
       "paths": {
-         "tslib": ["./node_modules/tslib/tslib.d.ts"]
+         "tslib": [
+            "./node_modules/tslib/tslib.d.ts"
+         ]
       },
       "strict": true,
       "noImplicitReturns": true,
       "noEmitOnError": true,
-      "forceConsistentCasingInFileNames": true
+      "forceConsistentCasingInFileNames": true,
+      "strictNullChecks": true
    }
 }

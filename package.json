@@ -10,7 +10,7 @@
     "prestart": "npm run build",
     "start": "node .",
     "lint": "eslint ./src/**/*.ts",
-    "test": "jest"
+    "test": "jest --verbose"
   },
   "keywords": [],
   "author": "",

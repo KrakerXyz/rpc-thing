@@ -1,17 +1,39 @@
+import { Transport } from './abstractions/index.js';
 import { RpcThing } from './RpcThing.js';
-import { WebSocketClientTransport } from './transports/WebSocketClientTransport.js';
+import { DefaultSerializer } from './serializers/index.js';
 
 interface Foo {
-   zip: {
-      bar(s: string): string;
+   zip(): {
+      bar: (s: string) => Promise<string>;
    };
 }
 
-const transport = new WebSocketClientTransport();
-const thing = new RpcThing<Foo>(transport);
+const service: Foo = {
+   zip() {
+      return {
+         bar: (s) => {
+            return Promise.resolve(s);
+         }
+      };
+   }
+};
 
-const result = thing.target.zip.bar('hello world');
-console.log('Awaiting result');
-Promise.resolve(result).then((r) => {
-   console.log('Got result', r);
-});
+const transportClient: Transport = {
+   async invoke(data) {
+      const result = await serializer.invoke(data as any);
+      return result;
+   }
+};
+
+const serializer = new DefaultSerializer(transportClient, service);
+
+const thing = new RpcThing<Foo>(serializer);
+
+const result = thing.target.zip();
+const resolvedResult = await result;
+
+const bar = resolvedResult.bar('hello world');
+const barA = await bar;
+
+console.log(barA);
+

@@ -1,21 +1,17 @@
-import { ISerializer } from './abstractions/ISerializer';
-import { ITransport } from './abstractions/ITransport';
-import { defaultSerializer } from './DefaultSerializer.js';
+import { Serializer, Service, PromisfiedService } from './abstractions/index.js';
 import { createProxy } from './internal/createProxy.js';
 
-export class RpcThing<T> {
-   private readonly _serializer: ISerializer = defaultSerializer;
+export class RpcThing<TService extends Service<TService>> {
    private readonly _proxy: any;
 
-   public constructor(private readonly _transport: ITransport) {
+   public constructor(private readonly _serializer: Serializer) {
       this._proxy = createProxy('', (path, args) => {
-         const serialized = this._serializer.serializeMethodCall(path, args);
-         const prom = this._transport.remoteInvoke(serialized);
-         return prom;
+         const result = this._serializer.remoteInvoke({ path: path.split('.'), args });
+         return result;
       });
    }
 
-   public get target(): T {
+   public get target(): PromisfiedService<TService> {
       return this._proxy;
    }
 }

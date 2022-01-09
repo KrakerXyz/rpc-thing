@@ -5,6 +5,9 @@ const pathSymbol = Symbol('Proxy Path');
 export function createProxy(path: string, applyHandler: ApplyHandler, base?: any) {
    return new Proxy(createProxyTarget(path, base), {
       get: (target, prop) => {
+         //Something to do with resolving a proxy that it'll try to call a then() on the proxy as well. 
+         //For now, we'll just make it so you can't have a function named 'then' in the service
+         // https://stackoverflow.com/a/30819436/108537
          if (prop === 'then') {
             return null;
          }
@@ -20,6 +23,11 @@ export function createProxy(path: string, applyHandler: ApplyHandler, base?: any
 
 function getHandler(target: any, prop: string | symbol, applyHandler: ApplyHandler): any {
    if (typeof prop === 'symbol') {
+
+      if (prop === Symbol.asyncIterator) {
+         return target['__asyncIterator'];
+      }
+
       throw new Error('Using a Symbol to access a function/property is not supported');
    }
    const path = target[pathSymbol];

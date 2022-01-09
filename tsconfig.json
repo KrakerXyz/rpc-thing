@@ -5,12 +5,15 @@
       "sourceMap": true,
       "removeComments": true,
       "esModuleInterop": true, //To stop jest from complaining
+      "declaration": true,
+      "declarationMap": true,
+      "rootDir": "src",
       "outDir": "dist",
+      "importHelpers": true,
       "skipLibCheck": true,
       "types": [
          "jest"
       ],
-      "importHelpers": true,
       "paths": {
          "tslib": [
             "./node_modules/tslib/tslib.d.ts"
@@ -20,6 +23,10 @@
       "noImplicitReturns": true,
       "noEmitOnError": true,
       "forceConsistentCasingInFileNames": true,
-      "strictNullChecks": true
-   }
+      "strictNullChecks": true,
+      "noPropertyAccessFromIndexSignature": true
+   },
+   "exclude": [
+      "src/**/*.spec.ts"
+   ]
 }

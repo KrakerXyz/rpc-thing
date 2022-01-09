@@ -4,6 +4,9 @@
   "description": "",
   "main": "dist/index.js",
   "type": "module",
+  "files": [
+    "dist/"
+  ],
   "scripts": {
     "clean": "rimraf ./dist/*",
     "build": "npm run clean && tsc",
@@ -15,6 +18,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "sideEffects": false,
   "dependencies": {
     "uuid": "^8.3.2"
   },

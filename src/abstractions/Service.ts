@@ -20,7 +20,8 @@ export type PromisfiedService<T extends Service<T>> = ExpandDeep<{
    T[K] extends (...args: infer TArgs) => infer TReturn
       ? (...args: TArgs) => PromiseWrap<TReturn>
       : T[K] extends string ? () => Promise<T[K]>
-         : T[K] extends Record<string, any>
-            ? () => Promise<PromisfiedService<T[K]>>
-            : PromisfiedService<T[K]>
+         : T[K] extends AsyncGenerator<any> ? () => Promise<T[K]>
+            : T[K] extends Record<string, any>
+               ? () => Promise<PromisfiedService<T[K]>>
+               : PromisfiedService<T[K]>
 }>;

@@ -36,6 +36,10 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
                obj[v.k] = v.v;
             }
 
+            if (remoteResponse.ae) {
+               obj['__asyncIterator'] = () => thing.target;
+            }
+
             if (remoteResponse.st) { return obj; }
          }
 
@@ -58,7 +62,7 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
       }
 
       if (remoteResponse.t === ResultType.Error) {
-         throw new Error(remoteResponse.m);
+         throw new Error(`Remote Error: ${remoteResponse.m}`);
       }
 
       throw new Error(`Response type ${Object.values(ResultType)[(remoteResponse as any).t]} not implemented`);
@@ -93,15 +97,19 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
          for(const prop of propNames) {
             const v = (result as any)[prop];
             const vt = typeof v;
-            if (vt === 'object' || vt === 'symbol' || vt === 'function') { continue; }
+            if (vt === 'symbol' || vt === 'function') { continue; }
+            if (vt === 'object' && !this.isStaticObject(v)) { continue; }
             staticValues.push({ k: prop, v: v });
          }
+
+         const ae = (result as any)[Symbol.asyncIterator] ? true : undefined;
          
          return {
             callId,
             t: ResultType.Object,
-            st: staticValues.length === propNames.length,
-            vs: staticValues.length ? staticValues : undefined
+            st: !ae && staticValues.length === propNames.length,
+            vs: staticValues.length ? staticValues : undefined,
+            ae
          };
       }
 
@@ -115,10 +123,22 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
       throw new Error(`Unknown result serializer for type ${type}`);
    }
 
+   private isStaticObject(v: any): boolean {
+      for (const prop of Object.getOwnPropertyNames(v)) {
+         const cv = v[prop];
+         const ct = typeof cv;
+         if (ct === 'symbol' || ct === 'function') { return false; }
+         if (ct === 'object' && !this.isStaticObject(cv)) { return false; }
+      }
+      return true;
+   }
+
    private readonly _childObjects = new Map < string, any > ();
    public async invoke(call: Call): Promise<SerializedResult> {
+      console.log('Invoking: ' + call.callArgs.path.join('.'));
+      const service: any = call.parentCallId ? this._childObjects.get(call.parentCallId) : this.service;
+      let value: any = service;
       try {
-         let value: any = call.parentCallId ? this._childObjects.get(call.parentCallId) : this.service;
          const usedSegments: string[] = [];
          for (const pathSegment of call.callArgs.path) {
             value = pathSegment ? value[pathSegment] : value;
@@ -130,7 +150,7 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
 
          let result = value;
          if (typeof result === 'function') {
-            result = result(...call.callArgs.args);
+            result = result.apply(service, call.callArgs.args);
          } else if (call.callArgs.args.length) {
             throw new Error('Args given but value was not a function');
          }
@@ -140,10 +160,14 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
          const serialized = this.serializeResult(call.callId, resolvedResult);
 
          if (serialized.t === ResultType.Object && !serialized.st) {
-            this._childObjects.set(call.callId, resolvedResult);
-         }
 
-         if (serialized.t === ResultType.Array) {
+            if (serialized.ae) {
+               this._childObjects.set(call.callId, resolvedResult);
+            } else {
+               this._childObjects.set(call.callId, resolvedResult);
+            }
+
+         } else if (serialized.t === ResultType.Array) {
             for (let i = 0; i < serialized.e.length; i++) {
                const e = serialized.e[i];
                if (e.t !== ResultType.Object && e.t !== ResultType.Function) { continue; }
@@ -193,6 +217,8 @@ interface ObjectResult {
       k: string,
       v: ValueResult
    }[];
+   /** Indicates that the object is a AsyncEnumerable */
+   ae?: boolean;
 }
 
 interface ArrayResult {
@@ -225,9 +251,15 @@ const _example = {
    p5: { //done
       pp1: 'whatever.. Same as example just recursive',
    },
-   p6: ['a', 1, () => 'q'],
-   p7: function* () {
+   p6: ['a', 1, () => 'q'], //done
+   p7: function* () { //done
       yield '1';
+   },
+   
+   asyncGenWithFunctionsInReturnObject: async function* () {
+      yield Promise.resolve({
+         someFunc: () => { /* */}
+      });
    },
    p8: (function* () {
       yield '1';

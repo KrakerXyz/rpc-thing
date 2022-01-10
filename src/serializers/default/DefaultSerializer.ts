@@ -135,7 +135,6 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
 
    private readonly _childObjects = new Map < string, any > ();
    public async invoke(call: Call): Promise<SerializedResult> {
-      console.log('Invoking: ' + call.callArgs.path.join('.'));
       const service: any = call.parentCallId ? this._childObjects.get(call.parentCallId) : this.service;
       let value: any = service;
       try {

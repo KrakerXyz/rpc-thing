@@ -1,10 +1,11 @@
-import { __generator } from 'tslib';
 import { v4 } from 'uuid';
 import { CallArgs, Transport, Serializer, Service } from '../../abstractions/index.js';
 import { RpcThing } from '../../RpcThing.js';
 
 export class DefaultSerializer<TService extends Service<TService>> implements Serializer {
    public constructor(private readonly _transport: Transport, private readonly service: TService) { }
+
+   public verboseLogging: boolean = false;
 
    public remoteInvoke(callArgs: CallArgs): Promise<unknown> {
       const result = this.internalRemoteInvoke(callArgs, undefined) as any;
@@ -14,6 +15,7 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
    private async internalRemoteInvoke(callArgs: CallArgs, parentCallId: string | undefined): Promise<unknown> {
 
       const call: Call = {
+         t: InvokeType.Call,
          parentCallId,
          callId: v4(),
          callArgs
@@ -27,45 +29,61 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
  
    }
 
+   private readonly _finalizerRegistry = new FinalizationRegistry(callId => {
+      this.log(`FinalizationRegistry triggered for callId ${callId}`);
+      const finalize: Finalize = {
+         t: InvokeType.Finalize,
+         callId: callId as string
+      };
+      this._transport.invoke(finalize);
+   });
+
    private deserializeRemoteResponse(remoteResponse: SerializedResult): any {
-      if (remoteResponse.t === ResultType.Object || remoteResponse.t === ResultType.Function) {
+
+      const callId = remoteResponse.callId;
+      const resultType = remoteResponse.t;
+
+      if (resultType === ResultType.Object || resultType === ResultType.Function) {
 
          const obj: any = {};
-         if (remoteResponse.t === ResultType.Object) {
+         if (resultType === ResultType.Object) {
             for (const v of (remoteResponse.vs ?? [])) {
                obj[v.k] = v.v;
             }
 
+            if (remoteResponse.st) { return obj; }
+
             if (remoteResponse.ae) {
                obj['__asyncIterator'] = () => thing.target;
             }
-
-            if (remoteResponse.st) { return obj; }
          }
 
          const thing = new RpcThing<any>({
             remoteInvoke: (childCall) => {
-               return this.internalRemoteInvoke(childCall, remoteResponse.callId);
+               return this.internalRemoteInvoke(childCall, callId);
             }
          }, obj);
+
+         this._finalizerRegistry.register(thing, callId);
+         this.log(`Registered finalizer for ${callId}`);
 
          return thing.target;
       }
 
-      if (remoteResponse.t === ResultType.Value) {
+      if (resultType === ResultType.Value) {
          return remoteResponse.v;
       }
 
-      if (remoteResponse.t === ResultType.Array) {
-         const deserializedElements = remoteResponse.e.map((e, i) => this.deserializeRemoteResponse({ callId: `${remoteResponse.callId}[${i}]`, ...e, }));
+      if (resultType === ResultType.Array) {
+         const deserializedElements = remoteResponse.e.map((e, i) => this.deserializeRemoteResponse({ callId: `${callId}[${i}]`, ...e, }));
          return deserializedElements;
       }
 
-      if (remoteResponse.t === ResultType.Error) {
+      if (resultType === ResultType.Error) {
          throw new Error(`Remote Error: ${remoteResponse.m}`);
       }
 
-      throw new Error(`Response type ${Object.values(ResultType)[(remoteResponse as any).t]} not implemented`);
+      throw new Error(`Response type ${Object.values(ResultType)[resultType]} not implemented`);
    }
 
    private serializeResult(callId: string, result: unknown): SerializedResult {
@@ -97,8 +115,13 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
          for(const prop of propNames) {
             const v = (result as any)[prop];
             const vt = typeof v;
-            if (vt === 'symbol' || vt === 'function') { continue; }
+            //Symbols are not supported. Just ignore them
+            if (vt === 'symbol') { continue; }
+            //Ignore the function because the proxy will just try to call it
+            if (vt === 'function') { continue; }
+            //If the value is an object and it has any dynamic values, we're skip adding it so that it can be called from the proxy
             if (vt === 'object' && !this.isStaticObject(v)) { continue; }
+            //If it's all static stuff, return object as-is
             staticValues.push({ k: prop, v: v });
          }
 
@@ -134,7 +157,17 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
    }
 
    private readonly _childObjects = new Map < string, any > ();
-   public async invoke(call: Call): Promise<SerializedResult> {
+   public async invoke(call: Call | Finalize): Promise<SerializedResult> {
+
+      if (call.t === InvokeType.Finalize) {
+         const hasKey = this._childObjects.has(call.callId);
+         if (hasKey) { this._childObjects.delete(call.callId); }
+
+         this.log(`Received finalizer for callId ${call.callId}, hasKey ${hasKey}`);
+         
+         return this.serializeResult(call.callId, hasKey);
+      }
+
       const service: any = call.parentCallId ? this._childObjects.get(call.parentCallId) : this.service;
       let value: any = service;
       try {
@@ -186,15 +219,31 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
       }
    }
 
+   private log(msg: string) {
+      if (!this.verboseLogging) { return; }
+      console.debug(msg);
+   }
+
+}
+
+export enum InvokeType {
+   Call,
+   Finalize
+}
+
+interface Finalize {
+   t: InvokeType.Finalize,
+   callId: string;
 }
 
 interface Call {
+   t: InvokeType.Call;
    parentCallId: string | undefined;
    callId: string;
    callArgs: CallArgs;
 }
 
-enum ResultType {
+export enum ResultType {
    Value,
    Object,
    Array,
@@ -202,7 +251,7 @@ enum ResultType {
    Error
 }
 
-type SerializedResultType = ObjectResult | ArrayResult | ValueResult | ErrorResult | FunctionResult;
+export type SerializedResultType = ObjectResult | ArrayResult | ValueResult | ErrorResult | FunctionResult;
 
 type SerializedResult = {
    callId: string;

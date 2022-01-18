@@ -26,6 +26,10 @@
       "strictNullChecks": true,
       "noPropertyAccessFromIndexSignature": true
    },
+   "include": [
+      "src/**/*.ts",
+      "src/index.spec.ts_"
+   ],
    "exclude": [
       "src/**/*.spec.ts"
    ]

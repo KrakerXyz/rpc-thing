@@ -8,21 +8,54 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
    public verboseLogging: boolean = false;
 
    public remoteInvoke(path: string[], args: unknown[]): Promise<unknown> {
-
-      const callArgs = this.createCallArgs(path, args);
-
-      const result = this.internalRemoteInvoke(callArgs, undefined) as any;
+      const result = this.internalRemoteInvoke(path, args, undefined) as any;
       return result;
    }
 
-   private createCallArgs(path: string[], args: unknown[]): CallArgs {
-      return {
-         path,
-         args: args.map(a => ({ t: ArgType.Value, v: a }))
-      };
+   private createArgs(args: readonly unknown[], functionMap: Record<string, (...args: any[]) => void>): Arg[] {
+      const outArgs: Arg[] = [];
+      for (const a of args) {
+         const type = typeof a;
+         if (type === 'symbol') {
+            throw new Error('Using a symbol as a argument is not supported');
+         }
+
+         if (type === 'object') {
+         
+            if (Array.isArray(a)) {
+               outArgs.push({ t: ArgType.Array, e: this.createArgs(a, functionMap) });
+               continue;
+            }
+
+            const entries = Object.keys(a as any).map(k => [k, this.createArgs((a as any)[k], functionMap)]);
+            const p = Object.fromEntries(entries);
+            outArgs.push({ t: ArgType.Object, p });
+
+            continue;
+         }
+
+         if (type === 'function') {
+            const id = v4();
+            outArgs.push({ t: ArgType.Function, id });
+            continue;
+         }
+
+         outArgs.push({ t: ArgType.Value, v: a });
+      }
+
+      return outArgs;
    }
 
-   private async internalRemoteInvoke(callArgs: CallArgs, parentCallId: string | undefined): Promise<unknown> {
+   /** Hold a list of functions based on function id per call id */
+   private readonly _functionMapByCallId: Map<string, Record<string, (...args: any[]) => any>> = new Map();
+
+   private async internalRemoteInvoke(path: string[], args: unknown[], parentCallId: string | undefined): Promise<unknown> {
+
+      const functionMap: Record<string, (...args: any[]) => any> = {};
+      const callArgs: CallArgs = {
+         path,
+         args: this.createArgs(args, functionMap)
+      };
 
       const call: Call = {
          t: InvokeType.Call,
@@ -30,6 +63,8 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
          callId: v4(),
          callArgs
       };
+
+      this._functionMapByCallId.set(call.callId, functionMap);
 
       const remoteResponse = await this._transport.invoke(call) as SerializedResult;
 
@@ -39,13 +74,14 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
  
    }
 
-   private readonly _finalizerRegistry = new FinalizationRegistry(callId => {
+   private readonly _finalizerRegistry = new FinalizationRegistry(async callId => {
       this.log(`FinalizationRegistry triggered for callId ${callId}`);
       const finalize: Finalize = {
          t: InvokeType.Finalize,
          callId: callId as string
       };
-      this._transport.invoke(finalize);
+      await this._transport.invoke(finalize);
+      this._functionMapByCallId.delete(finalize.callId);
    });
 
    private deserializeRemoteResponse(remoteResponse: SerializedResult): any {
@@ -70,8 +106,7 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
 
          const thing = new RpcThing<any>({
             remoteInvoke: (path: string[], args: unknown[]) => {
-               const childCall = this.createCallArgs(path, args);
-               return this.internalRemoteInvoke(childCall, callId);
+               return this.internalRemoteInvoke(path, args, callId);
             }
          }, obj);
 
@@ -170,8 +205,32 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
    private deserializeArgs(args: Arg[]): any[] {
       const anyArgs = [];
       for (const a of args) {
-         if (a.t === ArgType.Value) {
-            anyArgs.push(a.v);
+
+         switch (a.t) {
+            case ArgType.Array: {
+               const elementValues = this.deserializeArgs(a.e);
+               anyArgs.push(elementValues);
+               break;
+            }
+            case ArgType.Function: {
+               throw Error('Not implemented');
+            }
+            case ArgType.Object: {
+               const value: Record<string, any> = {};
+               for (const k of Object.keys(a.p)) {
+                  const v = this.deserializeArgs([a.p[k]]);
+                  value[k] = v[0];
+               }
+               anyArgs.push(value);
+               break;
+            }
+            case ArgType.Value: {
+               anyArgs.push(a.v);
+               break;
+            }
+            default: {
+               const _: never = a;
+            }
          }
       }
       return anyArgs;

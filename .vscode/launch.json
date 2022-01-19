@@ -5,16 +5,18 @@
    "version": "0.2.0",
    "configurations": [
       {
-         "type": "pwa-node",
+         "name": "Debug Tests",
+         "type": "node",
          "request": "launch",
-         "name": "Launch Program",
-         "skipFiles": [
-            "<node_internals>/**"
+         "runtimeArgs": [
+            "--inspect-brk",
+            "./node_modules/jest/bin/jest.js",
+            "--runInBand",
+            "--coverage",
+            "false"
          ],
-         "program": "${workspaceFolder}\\src\\index.ts",
-         "outFiles": [
-            "${workspaceFolder}/**/*.js"
-         ]
-      }
+         "console": "integratedTerminal",
+         "internalConsoleOptions": "neverOpen"
+      },
    ]
 }

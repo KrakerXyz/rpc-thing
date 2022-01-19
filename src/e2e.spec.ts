@@ -133,3 +133,25 @@ test('async gen', async () => {
    }
    expect(values).toEqual([1, 2, 3]);
 });
+
+test('func call with string arg', async () => {
+   const service = {
+      foo(v: string) {
+         return `hello ${v}`;
+      }
+   };
+   const proxy = createThing(service);
+   const result = await proxy.foo('test');
+   expect(result).toBe('hello test');
+});
+
+test('func call with simple array', async () => {
+   const service = {
+      foo(n: number[]) {
+         return n.map(x => x*10);
+      }
+   };
+   const proxy = createThing(service);
+   const result = await proxy.foo([1,2,3]);
+   expect(result).toEqual([10, 20, 30]);
+});

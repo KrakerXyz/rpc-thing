@@ -1,5 +1,5 @@
 import { v4 } from 'uuid';
-import { CallArgs, Transport, Serializer, Service } from '../../abstractions/index.js';
+import { CallArgs, Transport, Serializer, Service, Arg, ArgType } from '../../abstractions/index.js';
 import { RpcThing } from '../../RpcThing.js';
 
 export class DefaultSerializer<TService extends Service<TService>> implements Serializer {
@@ -7,9 +7,19 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
 
    public verboseLogging: boolean = false;
 
-   public remoteInvoke(callArgs: CallArgs): Promise<unknown> {
+   public remoteInvoke(path: string[], args: unknown[]): Promise<unknown> {
+
+      const callArgs = this.createCallArgs(path, args);
+
       const result = this.internalRemoteInvoke(callArgs, undefined) as any;
       return result;
+   }
+
+   private createCallArgs(path: string[], args: unknown[]): CallArgs {
+      return {
+         path,
+         args: args.map(a => ({ t: ArgType.Value, v: a }))
+      };
    }
 
    private async internalRemoteInvoke(callArgs: CallArgs, parentCallId: string | undefined): Promise<unknown> {
@@ -59,7 +69,8 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
          }
 
          const thing = new RpcThing<any>({
-            remoteInvoke: (childCall) => {
+            remoteInvoke: (path: string[], args: unknown[]) => {
+               const childCall = this.createCallArgs(path, args);
                return this.internalRemoteInvoke(childCall, callId);
             }
          }, obj);
@@ -156,6 +167,16 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
       return true;
    }
 
+   private deserializeArgs(args: Arg[]): any[] {
+      const anyArgs = [];
+      for (const a of args) {
+         if (a.t === ArgType.Value) {
+            anyArgs.push(a.v);
+         }
+      }
+      return anyArgs;
+   }
+
    private readonly _childObjects = new Map < string, any > ();
    public async invoke(call: Call | Finalize): Promise<SerializedResult> {
 
@@ -180,10 +201,12 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
             usedSegments.push(pathSegment);
          }
 
+         const args = this.deserializeArgs(call.callArgs.args);
+
          let result = value;
          if (typeof result === 'function') {
-            result = result.apply(service, call.callArgs.args);
-         } else if (call.callArgs.args.length) {
+            result = result.apply(service, args);
+         } else if (args.length) {
             throw new Error('Args given but value was not a function');
          }
 

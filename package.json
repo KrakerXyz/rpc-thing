@@ -13,7 +13,7 @@
     "prestart": "npm run build",
     "start": "node .",
     "lint": "eslint ./src/**/*.ts",
-    "test": "jest --verbose"
+    "test": "jest --verbose ----detectOpenHandles"
   },
   "keywords": [],
   "author": "",

@@ -1,0 +1,135 @@
+
+import { RpcThing, Transport, DefaultSerializer, PromisfiedService } from './index';
+
+function createThing<T>(service: T): PromisfiedService<T> {
+
+   const transportClient: Transport = {
+      async invoke(data) {
+         const dataClone = JSON.parse(JSON.stringify(data));
+         const result = await serializer.invoke(dataClone);
+         return result;
+      }
+   };
+   const serializer = new DefaultSerializer(transportClient, service);
+      
+      
+   const thing = new RpcThing<typeof service>(serializer);
+
+   return thing.target;
+}
+
+
+test('symbol property access throw error', () => {
+   const sym = Symbol();
+   const service = {
+      [sym]: 'foo'
+   };
+
+   const proxy = createThing(service);
+
+   expect(() => proxy[sym]).toThrow();
+});
+
+test('simple string property', async () => {
+   const service = {
+      test: 'a'
+   };
+   const proxy = createThing(service);
+   const result = await proxy.test();
+   expect(result).toBe('a');
+});
+
+test('simple number property', async () => {
+   const service = {
+      test: 1
+   };
+   const proxy = createThing(service);
+   const result = await proxy.test();
+   expect(result).toBe(1);
+});
+
+test('simple boolean property', async () => {
+   const service = {
+      test: true
+   };
+   const proxy = createThing(service);
+   const result = await proxy.test();
+   expect(result).toBe(true);
+});
+
+test('static only method', async () => {
+   const service = {
+      staticOnlyMethod() {
+         return {
+            static: 0
+         };
+      }
+   };
+   const proxy = createThing(service);
+   const result = await proxy.staticOnlyMethod();
+   expect(result.static).toBe(0);
+});
+
+test('nested functions', async () => {
+   const service = {
+      foo() {
+         return {
+            bar() {
+               return 'fizz';
+            }
+         };
+      }
+   };
+
+   const proxy = createThing(service);
+   const foo = await proxy.foo();
+   const bar = await foo.bar();
+   expect(bar).toBe('fizz');
+});
+
+test('simple object', async () => {
+   const service = {
+      foo: {
+         bar: 'fizz'
+      }
+   };
+   const proxy = createThing(service);
+   const foo = await proxy.foo();
+   expect(foo.bar).toBe('fizz');
+});
+
+test('simple array', async () => {
+   const service = {
+      arr: [1, 'a', true]
+   };
+   const proxy = createThing(service);
+   const result = await proxy.arr();
+   expect(result).toEqual([1, 'a', true]);
+});
+
+test('array with func', async () => {
+   const service = {
+      arr: [() => 'foo']
+   };
+   const proxy = createThing(service);
+   const result = await proxy.arr();
+   const funcResult = await result[0]();
+   expect(funcResult).toBe('foo');
+});
+
+test('async gen', async () => {
+   const service = {
+      async *foo() {
+         yield await Promise.resolve(1);
+         yield await Promise.resolve(2);
+         yield await Promise.resolve(3);
+      }
+   };
+   const proxy = createThing(service);
+   const ag = await proxy.foo();
+   const values: any[] = [];
+   for await (const v of ag) {
+      values.push(v);
+   }
+   expect(values).toEqual([1, 2, 3]);
+});

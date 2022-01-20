@@ -3,7 +3,17 @@ import { CallArgs, Transport, Serializer, Service, Arg, ArgType } from '../../ab
 import { RpcThing } from '../../RpcThing.js';
 
 export class DefaultSerializer<TService extends Service<TService>> implements Serializer {
-   public constructor(private readonly _transport: Transport, private readonly service: TService) { }
+   public constructor(private readonly _transport: Transport, private readonly service: TService) {
+      if (_transport.setPushHandler) {
+         _transport.setPushHandler(data => {
+            const result = this.invoke(data as RemoteInvoke);
+            return {
+               handled: true,
+               result
+            };
+         });
+      }
+   }
 
    public verboseLogging: boolean = false;
 
@@ -27,7 +37,7 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
                continue;
             }
 
-            const entries = Object.keys(a as any).map(k => [k, this.createArgs((a as any)[k], functionMap)]);
+            const entries = Object.keys(a as any).map(k => [k, this.createArgs([(a as any)[k]], functionMap)[0]]);
             const p = Object.fromEntries(entries);
             outArgs.push({ t: ArgType.Object, p });
 
@@ -67,6 +77,7 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
 
       this._functionMapByCallId.set(call.callId, functionMap);
 
+      this.log(`Remoting call for ${call.callArgs.path} as callId ${call.callId}`);
       const remoteResponse = await this._transport.invoke(call) as SerializedResult;
 
       const result = this.deserializeRemoteResponse(remoteResponse);
@@ -326,6 +337,8 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
                const arrCallId = `${call.callId}[${i}]`;
                this._childObjects.set(arrCallId, resolvedResult[i]);
             }
+         } else if (serialized.t === ResultType.Function) {
+            this._childObjects.set(call.callId, resolvedResult);
          }
 
          return serialized;

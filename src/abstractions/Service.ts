@@ -1,7 +1,11 @@
 
 export type Service<T> = { [K in keyof T]:  ((...args: any[]) => any) | Service<T[K]> }; 
 
-export type PromiseWrap<T> = T extends Promise<any> ? T : Promise<T>;
+export type PromiseWrap<T> = T extends Promise<infer TInner>
+   ? PromisfiedService<TInner>
+   : T extends (...args: infer TArgs) => infer TReturn
+      ? (...args: TArgs) => Promise<TReturn>
+      : Promise<T>;
 
 export type ExpandDeep<T> =
    T extends (...args: any[]) => any

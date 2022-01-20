@@ -134,6 +134,21 @@ test('async gen', async () => {
    expect(values).toEqual([1, 2, 3]);
 });
 
+test('function returned from function', async () => {
+   const service = {
+      getFunc() {
+         return () => {
+            return 'test';
+         };
+      }
+   };
+
+   const proxy = createThing(service);
+   const inner = await proxy.getFunc();
+   const result = await inner();
+   expect(result).toBe('test');
+});
+
 test('func call with string arg', async () => {
    const service = {
       foo(v: string) {
@@ -175,4 +190,22 @@ test('func argument', async () => {
    });
 
    expect(result).toBe(300);
+});
+
+test('func argument with object response', async () => {
+   const service = {
+      test(callback: (n: any) => void) {
+         callback({test: 'foo'});
+      }
+   };
+
+   const proxy = createThing(service);
+
+   const result = await new Promise(r => {
+      proxy.test(cb => {
+         r(cb);
+      });
+   });
+
+   expect(result).toEqual({ test: 'foo' });
 });

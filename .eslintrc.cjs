@@ -67,10 +67,10 @@ module.exports = {
          }
       ],
 
-      'complexity': [
-         //https://eslint.org/docs/rules/complexity
-         'error'
-      ],
+      // 'complexity': [
+      //    //https://eslint.org/docs/rules/complexity
+      //    'error'
+      // ],
 
       'indent': [
          //Turning off because I'm not sure how to get it to require initial indent in vue scripts

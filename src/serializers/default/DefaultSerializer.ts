@@ -36,6 +36,7 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
 
          if (type === 'function') {
             const id = v4();
+            functionMap[id] = a as (...args: any[]) => void;
             outArgs.push({ t: ArgType.Function, id });
             continue;
          }
@@ -202,23 +203,42 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
       return true;
    }
 
-   private deserializeArgs(args: Arg[]): any[] {
+   private deserializeArgs(callId: string, args: Arg[]): any[] {
       const anyArgs = [];
       for (const a of args) {
 
          switch (a.t) {
             case ArgType.Array: {
-               const elementValues = this.deserializeArgs(a.e);
+               const elementValues = this.deserializeArgs(callId, a.e);
                anyArgs.push(elementValues);
                break;
             }
             case ArgType.Function: {
-               throw Error('Not implemented');
+               const f = async (...args: any[]) => {
+                  const functionMap: Record<string, (...args: any[]) => any> = {};
+                  const serializedArgs = this.createArgs(args, functionMap);
+                  if (Object.keys(functionMap).length) {
+                     throw new Error('Functions within function argument is not supported');
+                  }
+                  const funcCall: FunctionCall = {
+                     t: InvokeType.Function,
+                     callId: v4(),
+                     functionId: a.id,
+                     parentCallId: callId,
+                     callArgs: serializedArgs
+                  };
+                  
+                  const response = await this._transport.invoke(funcCall);
+                  return response;
+               };
+               anyArgs.push(f);
+
+               break;
             }
             case ArgType.Object: {
                const value: Record<string, any> = {};
                for (const k of Object.keys(a.p)) {
-                  const v = this.deserializeArgs([a.p[k]]);
+                  const v = this.deserializeArgs(callId, [a.p[k]]);
                   value[k] = v[0];
                }
                anyArgs.push(value);
@@ -237,7 +257,7 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
    }
 
    private readonly _childObjects = new Map < string, any > ();
-   public async invoke(call: Call | Finalize): Promise<SerializedResult> {
+   public async invoke(call: RemoteInvoke): Promise<SerializedResult> {
 
       if (call.t === InvokeType.Finalize) {
          const hasKey = this._childObjects.has(call.callId);
@@ -246,6 +266,23 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
          this.log(`Received finalizer for callId ${call.callId}, hasKey ${hasKey}`);
          
          return this.serializeResult(call.callId, hasKey);
+      }
+
+      if (call.t === InvokeType.Function) {
+         
+         const callFunctions = this._functionMapByCallId.get(call.parentCallId);
+         if (!callFunctions) { throw new Error(`Functions for ${call.parentCallId} not found`); }
+
+         const f = callFunctions[call.functionId];
+         if (!f) { throw new Error(`Function ${call.functionId} for call ${call.parentCallId} not found`); }
+
+         const args = this.deserializeArgs(call.callId, call.callArgs);
+
+         const rawResult = f(...args);
+         const result = await Promise.resolve(rawResult);
+
+         const serializedResult = this.serializeResult(call.callId, result);
+         return serializedResult;
       }
 
       const service: any = call.parentCallId ? this._childObjects.get(call.parentCallId) : this.service;
@@ -260,7 +297,7 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
             usedSegments.push(pathSegment);
          }
 
-         const args = this.deserializeArgs(call.callArgs.args);
+         const args = this.deserializeArgs(call.callId, call.callArgs.args);
 
          let result = value;
          if (typeof result === 'function') {
@@ -310,19 +347,36 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
 
 export enum InvokeType {
    Call,
-   Finalize
+   Finalize,
+   Function
 }
 
+export type RemoteInvoke = Finalize | Call | FunctionCall
+
+/** Triggered when a proxy created as a result of a call's returned value is garbage collected */
 interface Finalize {
    t: InvokeType.Finalize,
    callId: string;
 }
 
+/** A call to a service method */
 interface Call {
    t: InvokeType.Call;
    parentCallId: string | undefined;
    callId: string;
    callArgs: CallArgs;
+}
+
+/** A call to a function that was originally passed as an argument to another call */
+interface FunctionCall {
+   t: InvokeType.Function;
+   /** This id of the original call that included the function as an argument */
+   parentCallId: string;
+   /** The id given to this function by the origin */
+   functionId: string;
+   /** The id given to this call instance */
+   callId: string;
+   callArgs: Arg[]
 }
 
 export enum ResultType {

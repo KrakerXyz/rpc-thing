@@ -155,3 +155,24 @@ test('func call with simple array', async () => {
    const result = await proxy.foo([1,2,3]);
    expect(result).toEqual([10, 20, 30]);
 });
+
+test('func argument', async () => {
+   const service = {
+      test(callback: (n: number) => void) {
+         callback(100);
+         callback(200);
+      }
+   };
+
+   const proxy = createThing(service);
+
+   const result = await new Promise(r => {
+      let count = 0;
+      proxy.test(cb => {
+         count+= cb;
+         if (count === 300) { r(count); }
+      });
+   });
+
+   expect(result).toBe(300);
+});

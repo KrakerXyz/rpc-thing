@@ -25,6 +25,12 @@ export class DefaultSerializer<TService extends Service<TService>> implements Se
    private createArgs(args: readonly unknown[], functionMap: Record<string, (...args: any[]) => void>): Arg[] {
       const outArgs: Arg[] = [];
       for (const a of args) {
+
+         if (a === null) {
+            outArgs.push({ t: ArgType.Value, v: null });
+            continue;
+         }
+
          const type = typeof a;
          if (type === 'symbol') {
             throw new Error('Using a symbol as a argument is not supported');

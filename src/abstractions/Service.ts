@@ -1,5 +1,5 @@
 
-export type Service<T> = { [K in keyof T]:  ((...args: any[]) => any) | Service<T[K]> }; 
+export type Service<T> = { [K in keyof T]: T[K] extends symbol ? never :  ((...args: any[]) => any) | Service<T[K]> }; 
 
 export type PromisfiedService<T extends Service<T>> = ExpandDeep<{
    [K in keyof T]: T[K] extends StaticValue ? () => PromiseWrap<T[K]> : T[K] extends symbol ? never : T[K] extends (...args: infer TArgs) => infer TReturn ? (...args: TArgs) => PromiseWrap<MapValue<TReturn>> : () => Promise<MapValue<T[K]>>

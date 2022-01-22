@@ -1,7 +1,7 @@
 
-import { RpcThing, Transport, DefaultSerializer, PromisfiedService } from './index';
+import { RpcThing, Transport, DefaultSerializer, PromisfiedService, Service } from './index';
 
-function createThing<T>(service: T): PromisfiedService<T> {
+function createThing<T extends Service<T>>(service: T): PromisfiedService<T> {
 
    const transportClient: Transport = {
       async invoke(data) {
